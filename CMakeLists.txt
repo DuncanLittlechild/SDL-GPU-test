@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(ENTER_PROJECT_NAME_HERE)
+project(GPU_TEST)
 set(CMAKE_CXX_STANDARD 23)
 # Toggle to set whether this is a prod build (ON) or debug (OFF)
 set(PRODUCTION_BUILD OFF CACHE BOOL "Make this a production build" FORCE)
@@ -96,6 +96,8 @@ if (PRODUCTION_BUILD)
 else()
     target_compile_definitions(${CMAKE_PROJECT_NAME} PUBLIC RESOURCES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/resources/")
     target_compile_definitions(${CMAKE_PROJECT_NAME} PUBLIC PRODUCTION_BUILD=0)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PUBLIC SHADER_PATH="${CMAKE_CURRENT_SOURCE_DIR}/shaders")
+    set(SHADERS_OUTPUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
 endif()
 # Creates the RESOURCES_PATH preprocessor macro which directs all file loading operations to the resources file
 
@@ -125,7 +127,40 @@ elseif(APPLE OR UNIX) # macOS / Linux
 		target_link_options("${CMAKE_PROJECT_NAME}" PRIVATE -s)
 	endif()
 endif()
+###############################
+##### Shader compilation ######
+###############################
+macro(compile_shaders)
+       file(GLOB_RECURSE src_shader_files
+              RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/shaders
+              CONFIGURE_DEPENDS
+              "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.hlsl"
+       )
+       find_program(SC_EXECUTABLE shadercross REQUIRED)
+       foreach(fn ${src_shader_files})
+              set(in_f "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${fn}")
+              set(out_f "${SHADERS_OUTPUT_DIR}/${fn}")
+              string(REPLACE ".hlsl" ".spv" fn_spv ${out_f})
+              string(REPLACE ".hlsl" ".msl" fn_msl ${out_f})
+              string(REPLACE ".hlsl" ".dxil" fn_dxil ${out_f})
+              add_custom_command(
+                     OUTPUT ${fn_spv} ${fn_msl} ${fn_dxil}
+                     COMMAND ${SC_EXECUTABLE} ${in_f} -o ${fn_spv}
+                     COMMAND ${SC_EXECUTABLE} ${in_f} -o ${fn_msl}
+                     COMMAND ${SC_EXECUTABLE} ${in_f} -o ${fn_dxil}
+                     MAIN_DEPENDENCY ${in_f}
+                     VERBATIM
+              )
+              list(APPEND out_shader_files ${fn_spv})
+              list(APPEND out_shader_files ${fn_msl})
+              list(APPEND out_shader_files ${fn_dxil})
+       endforeach()
+       add_custom_target(${PROJECT_NAME}_shaders DEPENDS ${out_shader_files})
+       add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_shaders)
 
+endmacro()
+
+compile_shaders()
 
 ####################
 ##### LINKING ######
